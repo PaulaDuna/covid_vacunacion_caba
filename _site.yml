@@ -1,0 +1,16 @@
+---
+name: "covid_vacunacion_caba"
+output_dir: "docs"
+output:
+ html_document:
+    fig_height: 4
+    fig_width: 5
+    toc: true
+    toc_depth: 4
+    toc_float:
+      toc_collapsed: true
+    number_sections: true
+    theme: paper
+editor_options:
+  chunk_output_type: console
+---
