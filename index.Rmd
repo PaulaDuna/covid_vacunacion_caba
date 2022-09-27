@@ -1,0 +1,611 @@
+---
+title: "Vacunación contra el COVID-19 en CABA"
+subtitle: "Introducción a la Ciencia de Datos en Salud - Geolocalización en R para Salud"
+author: "Paula Dunayevich"
+date: "10 de agosto de 2022"
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(echo = TRUE, eval = TRUE, message = FALSE, results = FALSE, warning = FALSE, fig.align = 'center')
+
+```
+
+```{css, echo = FALSE}
+.header-section-number::after {content: ".";}
+p {font-size: 16px;}
+li {font-size: 16px;}
+
+```
+
+# Covid-19 en la Ciudad Autónoma de Buenos Aires - Vacunación por comuna
+
+## Introducción
+
+La [COVID-19](https://www.who.int/es/emergencies/diseases/novel-coronavirus-2019/question-and-answers-hub/q-a-detail/coronavirus-disease-covid-19) es la enfermedad causada por el nuevo coronavirus conocido como SARS-CoV-2. La Organización Mundial de la Salud (OMS) [tuvo noticia por primera vez](https://www.who.int/es/news/item/27-04-2020-who-timeline---covid-19) de la existencia de este nuevo virus el 31 de diciembre de 2019, al ser informada de un grupo de casos de «neumonía vírica» que se habían declarado en Wuhan (República Popular China). A partir de allí y frente a la evidencia de su propagación a nivel global, [la OMS declaró la pandemia](https://www.paho.org/es/noticias/11-3-2020-oms-caracteriza-covid-19-como-pandemia).
+
+El lunes 2 de marzo se confirmó el [primer caso de SARS-CoV-2 en la Argentina](https://www.argentina.gob.ar/noticias/salud-confirma-el-primer-caso-de-coronavirus-en-el-pais). Se trató de una persona de 43 años de sexo masculino, que había estado entre el 19 y el 21 de febrero en Milán y entre el 22 y el 29 del mismo mes en otras ciudades de Italia y España e ingresó al país el domingo primero de marzo, fecha en la que realizó la consulta médica al presentar fiebre, tos y dolor de garganta.
+
+A partir de ese momento se tomaron [diversas medidas](https://www.argentina.gob.ar/coronavirus/medidas-gobierno): la regulación de la presencialidad en el ámbito educativo y laboral, el uso de barbijo en lugares públicos, el testeo de casos sospechosos y contactos estrechos y la restricción a la libre circulación en el marco del [aislamiento social preventivo y obligatorio](https://www.argentina.gob.ar/noticias/el-gobierno-nacional-decreto-el-aislamiento-social-preventivo-y-obligatorio) dispuesto por el Gobierno Nacional a partir del día 20 de marzo de 2020.
+
+En diciembre del 2020, el Ministerio de Salud de la Nación detalló en el denominado ['Plan Estratégico para la Vacunación contra la covid-19 en la República Argentina'](https://www.argentina.gob.ar/sites/default/files/coronavirus-vacuna-plan-estrategico-vacunacion-covid-19-diciembre-2020.pdf) los grupos prioritarios para ser vacunados. Encabezaron la lista el personal de salud y los adultos mayores.
+
+El 24 de diciembre de 2020 llegó a la Argentina el [primer lote con 300.000 dosis de la vacuna Sputnik V](https://www.argentina.gob.ar/noticias/llegaron-al-pais-las-primeras-vacunas-sputnik-v#:~:text=Luego%20de%20la%20aprobaci%C3%B3n%20de,es%20el%20personal%20de%20salud). El cargamento llegó desde Rusia a través de un vuelo de Aerolíneas Argentina.
+
+De esta manera comenzó la campaña de vacunación contra el COVID-19 en toda la República Argentina.
+
+## Objetivo
+
+En este trabajo analizaremos el proceso de vacunación contra el COVID-19 en la Ciudad Autónoma de Buenos Aires (CABA) durante el año 2021. En particular, nos interesa establecer qué comunas tuvieron el mayor y el menor porcentaje de población vacunada con la primera dosis de la vacuna y examinar posibles factores qué podrían explicar las diferencias entre comunas.
+
+## Metodología
+
+Las bases de datos que vamos a utilizar para abordar este objetivo, tanto las del gobierno de la República Argentina como las de la Ciudad Autónoma de Buenos Aires, son públicas y pueden ser descargadas utilizando los links que se detallan en cada caso.
+
+Para analizar el proceso de vacunación en las comunas de la Ciudad de Buenos Aires, primero vamos a hacer una limpieza de los datos. A continuación, vamos a agrupar los datos por comuna para luego determinar el porcentaje de vacunación correspondiente a cada una de ellas.
+
+Una vez encontradas las comunas con mayor y menor porcentaje de vacunación, procederemos a analizar posibles factores que podrían haber generado estas diferencias, como son la cantidad de postas de vacunación en cada comuna, la distancia entre los hogares de cada comuna y la posta de vacunación más cercana y el uso de vacunatorios fuera de la CABA por los habitantes de las distintas comunas como mecanismo para contrarrestar posibles dificultades en cuanto al acceso a las postas de vacunación locales.
+
+## Análisis
+
+### Bibliotecas
+
+Cargamos las bibliotecas necesarias para el análisis.
+
+```{r bibliotecas}
+library(tidyverse)
+library(lubridate)
+library(doBy)
+library(zoo)
+library(sf)
+library(units)
+library(ggpubr)
+
+```
+
+### Vacunación en la Ciudad Autónoma de Buenos Aires
+
+En esta parte del análisis utilizaremos la [base de datos de vacunación contra el COVID-19 en la República Argentina](https://datos.gob.ar/dataset/salud-vacunas-contra-covid-19-dosis-aplicadas-republica-argentina---registro-desagregado) (datos_nomivac_covid19.csv) mantenida por el Ministerio de Salud de la Nación (Dirección de Control de Enfermedades Inmunoprevenibles) descargada el día 18 de mayo de 2022.
+
+Esta base de datos contiene información sobre las dosis de vacunas contra el COVID-19 aplicadas en la República Argentina que se encuentran en el Registro Federal de Vacunación Nominalizado o NoMiVac.
+
+En particular, los datos especificados en la base de datos son: grupo etario, sexo, departamento y provincia de residencia, lugar de aplicación, fecha, vacuna y condición de aplicación.
+
+Para este trabajo vamos a utilizar los registros correspondientes a la población que reside en la Ciudad Autónoma de Buenos Aires, lo cual se encuentra indicado en la columna jurisdicción_residencia como 'CABA' (vacunas_covid_caba.csv).
+
+Por otro lado, vamos a utilizar las [proyecciones de población por grupo de edad y comuna según sexo](https://www.estadisticaciudad.gob.ar/eyc/?p=79970) para la Ciudad de Buenos Aires correspondientes al año 2021 (proyecciones_poblacion_por_comuna_caba_2021.csv).
+
+La idea es determinar si existen diferencias en cuanto al porcentaje de población vacunada en el 2021 entre las distintas comunas de la Ciudad de Buenos Aires.
+
+Con este fin, lo primero que hacemos es limpiar los datos con los que vamos a trabajar.
+
+```{r vacunacion por comuna - limpieza de datos, fig.width=8, fig.height=5, fig.cap='Vacunación con la primera dosis de la vacuna contra el COVID-19 por comuna de residencia en la Ciudad Autónoma de Buenos Aires durante el año 2021. Se encuentran coloreados los datos sin información (S.I.) respecto de la comuna de residencia.'}
+options(scipen = 100000)
+
+vacunas_covid_caba <- read.csv(file = 'data/vacunas_covid_caba.csv', sep = ',', dec = '.')
+
+vacunas_covid_caba_2 <- vacunas_covid_caba %>%
+  mutate(fecha = as.Date(as.character(fecha_aplicacion), format = "%Y-%m-%d"),
+         anio = year(fecha)) %>%
+  filter(anio == 2021,
+         nombre_dosis_generica == '1ra') %>%
+  select("depto_residencia", "jurisdiccion_aplicacion", "depto_aplicacion", "fecha")
+
+vacunas_covid_caba_3 <- vacunas_covid_caba_2 %>%
+  group_by(depto_residencia) %>% 
+  summarise(vacunas = n()) %>%
+  ungroup()
+
+ggplot(vacunas_covid_caba_3, aes(x = reorder(depto_residencia, -vacunas), y = vacunas, fill = depto_residencia == 'S.I.'))+
+  geom_col()+
+  scale_fill_manual(values = c("#999999", "#56B4E9"))+
+  scale_y_continuous(breaks = seq(0, 500000, by = 100000))+
+  coord_cartesian(ylim = c(0, 500000))+
+  labs(x = 'Comuna de residencia',
+       y = 'Vacunas aplicadas',
+       title = 'Vacunas aplicadas por comuna de residencia',
+       subtitle = 'Datos del Ministerio de Salud de la Nación')+
+  theme(panel.background = element_blank(),
+        panel.grid.major = element_line(colour = 'lightgrey', size = 0.2),
+        panel.grid.minor = element_line(colour = 'lightgrey', size = 0.1),
+        strip.background = element_blank(),
+        strip.text = element_text(size = 12),
+        axis.ticks = element_blank(),
+        axis.title = element_text(size = 14),
+        axis.text.x = element_text(angle = 45, vjust = 1, hjust=1),
+        axis.text = element_text(size = 10),
+        legend.key = element_rect(fill = "white"),
+        plot.title = element_text(size = 16),
+        plot.subtitle = element_text(size = 12),
+        legend.title = element_text(size = 12),
+        legend.text = element_text(size = 10))+
+  guides(fill = "none")
+
+vacunas_covid_caba_2 <- vacunas_covid_caba_2 %>%
+  filter(!depto_residencia == 'S.I.')
+
+rm(vacunas_covid_caba, vacunas_covid_caba_3)
+
+```
+
+Nos quedamos con los datos correspondientes a la inoculación de la primera dosis de la vacuna durante el año 2021 y filtramos los datos que no tengan departamento de residencia especificado.
+
+Vemos que la comuna 1 aplicó una cantidad mucho mayor de vacunas que el resto de las comunas. Para determinar si se trata de un error en la carga de los datos o no, vamos a normalizar por la población de cada comuna utilizando las proyecciones de población por comuna del Gobierno de la Ciudad de Buenos Aires.
+
+```{r vacunacion por comuna - limpieza de datos 2, fig.width=8, fig.height=5, fig.cap='Vacunación con la primera dosis de la vacuna contra el COVID-19 por comuna de residencia en la Ciudad Autónoma de Buenos Aires durante el año 2021. Se encuentran coloreados los datos correspondientes a la comuna 1.'}
+vacunas_covid_caba_2 <- vacunas_covid_caba_2 %>%
+  mutate(comuna = as.integer(str_extract(depto_residencia, "[0-9]+"))) %>%
+  select(-depto_residencia)
+
+pobl_comuna_caba <- read.csv(file = 'data/proyecciones_poblacion_por_comuna_caba_2021.csv', sep = ',', dec = '.')
+
+vacunas_covid_caba_3 <- vacunas_covid_caba_2 %>%
+  group_by(comuna) %>%
+  summarise(vacunas = n()) %>%
+  ungroup()
+
+vacunas_covid_caba_3 <- left_join(vacunas_covid_caba_3,
+                                  pobl_comuna_caba,
+                                  by = 'comuna') %>%
+  mutate(vacunas_hab = vacunas / habitantes * 100)
+
+ggplot(vacunas_covid_caba_3, aes(x = comuna, y = vacunas_hab, fill = comuna == 1))+
+  geom_col()+
+  geom_hline(yintercept = 100, linetype = 'dashed')+
+  scale_fill_manual(values = c("#999999", "#56B4E9"))+
+  scale_x_continuous(breaks = seq(1, 15, by = 1))+
+  scale_y_continuous(breaks = seq(0, 200, by = 25))+
+  coord_cartesian(ylim = c(0, 200))+
+  labs(x = 'Comuna de residencia',
+       y = 'Población vacunada (%)',
+       title = 'Población vacunada por comuna de residencia',
+       subtitle = 'Datos del Ministerio de Salud de la Nación')+
+  theme(panel.background = element_blank(),
+        panel.grid.major = element_line(colour = 'lightgrey', size = 0.2),
+        panel.grid.minor = element_line(colour = 'lightgrey', size = 0.1),
+        strip.background = element_blank(),
+        strip.text = element_text(size = 12),
+        axis.ticks = element_blank(),
+        axis.title = element_text(size = 14),
+        axis.text = element_text(size = 10),
+        legend.key = element_rect(fill = "white"),
+        plot.title = element_text(size = 16),
+        plot.subtitle = element_text(size = 12),
+        legend.title = element_text(size = 12),
+        legend.text = element_text(size = 10))+
+  guides(fill = "none")
+
+vacunas_covid_caba_2 <- vacunas_covid_caba_2 %>%
+  filter(!comuna == 1)
+
+rm(vacunas_covid_caba_3)
+
+```
+
+Como se ve en el gráfico anterior, la base de datos sugiere que fue vacunada más del 150% de la población de la comuna 1 con la primera dosis de la vacuna contra el COVID-19. Esto se trata de un error. Es posible que al no saber a qué comuna corresponde una cierta dirección de residencia se haya ingresado comuna 1 por 'default'. Por lo tanto filtramos los datos correspondientes a esta comuna.
+
+> Tener en cuenta que la cantidad de datos filtrados debido a posibles errores en la carga de datos o a la falta de datos respecto de la comuna de residencia no es despreciable. Nuestro análisis se centra en las diferencias en cuanto a la vacunación entre comunas y filtrar esos datos debería afectar a todas las comunas por igual. Sin embargo, el filtrado de esta cantidad de datos podría llevar a resultados erróneos. A fines didácticos, en cualquier caso, seguimos con el análisis.
+
+Ahora que tenemos los datos que necesitamos, veamos la vacunación contra el COVID-19 en la Ciudad de Buenos Aires en el resto de las comunas.
+
+```{r vacunacion por comuna - gráficos, fig.width=8, fig.height=5, fig.cap='Vacunación con la primera dosis de la vacuna contra el COVID-19 en función del tiempo en la Ciudad Autónoma de Buenos Aires durante el año 2021. Las curvas se encuentran coloreadas por comuna de residencia.'}
+vacunas_covid_caba_3 <- vacunas_covid_caba_2 %>%
+  group_by(comuna, fecha) %>% 
+  summarise(vacunas = n()) %>%
+  ungroup()
+
+vacunas_covid_caba_3 <- left_join(vacunas_covid_caba_3,
+                                  pobl_comuna_caba,
+                                  by = 'comuna') %>%
+  mutate(vacunas_hab = vacunas / habitantes * 100)
+
+vacunas_covid_caba_3 <- transformBy(~comuna, data = vacunas_covid_caba_3, vacunas_hab_prom_7 = rollmeanr(vacunas_hab, 7, fill = 0))
+
+ggplot(vacunas_covid_caba_3, aes(x = fecha, y = vacunas_hab_prom_7, color = factor(comuna), group = comuna))+
+  geom_line()+
+  scale_y_continuous(breaks = seq(0, 0.2, by = 0.025))+
+  coord_cartesian(ylim = c(0, 0.175))+
+  labs(x = 'Fecha',
+       y = 'Población vacunada\n(%, promedio móvil de 7 días)',
+       title = 'Población vacunada en función del tiempo',
+       subtitle = 'Datos del Ministerio de Salud de la Nación')+
+  theme(panel.background = element_blank(),
+        panel.grid.major = element_line(colour = 'lightgrey', size = 0.2),
+        panel.grid.minor = element_line(colour = 'lightgrey', size = 0.1),
+        strip.background = element_blank(),
+        strip.text = element_text(size = 12),
+        axis.ticks = element_blank(),
+        axis.title = element_text(size = 14),
+        axis.text = element_text(size = 10),
+        legend.key = element_rect(fill = "white"),
+        plot.title = element_text(size = 16),
+        plot.subtitle = element_text(size = 12),
+        legend.title = element_text(size = 12),
+        legend.text = element_text(size = 10))+
+  guides(color = guide_legend(title = 'Comuna'))
+
+rm(vacunas_covid_caba_3)
+
+```
+
+El gráfico muestra el porcentaje de población vacunada (utilizando un promedio móvil con 7 datos para suavizar las curvas) en función del tiempo para las distintas comunas. Vemos que el lugar relativo de cada comuna se mantiene en el tiempo, es decir, las comunas con un mayor porcentaje de vacunación a principio de año continúan con un alto porcentaje de vacunación a mitad y a fin de año. Por esta razón, vamos a calcular el porcentaje de vacunación por comuna durante todo el 2021 (como hicimos en la etapa de limpieza de datos).
+
+```{r vacunacion por comuna - gráficos 2, fig.width=8, fig.height=5, fig.cap='Vacunación con la primera dosis de la vacuna contra el COVID-19 por comuna de residencia en la Ciudad Autónoma de Buenos Aires durante el año 2021. Las barras se encuentran ordenadas de menor a mayor respecto del porcentaje de población vacunada. Dentro de cada barra se indica el porcentaje de población vacunada de la comuna correspondiente.'}
+vacunas_covid_caba_3 <- vacunas_covid_caba_2 %>%
+  group_by(comuna) %>%
+  summarise(vacunas = n()) %>%
+  ungroup()
+
+vacunas_covid_caba_3 <- left_join(vacunas_covid_caba_3,
+                                  pobl_comuna_caba,
+                                  by = 'comuna') %>%
+  mutate(vacunas_hab = vacunas / habitantes * 100)
+
+ggplot(vacunas_covid_caba_3, aes(x = reorder(comuna, vacunas_hab), y = vacunas_hab))+
+  geom_col()+
+  geom_text(data = vacunas_covid_caba_3, aes(label = round(vacunas_hab, 2)), position = position_stack(vjust = 0.5), color = 'white')+
+  scale_y_continuous(breaks = seq(0, 20, by = 2))+
+  coord_cartesian(ylim = c(0, 16))+
+  labs(x = 'Comuna de residencia',
+       y = 'Población vacunada (%)',
+       title = 'Población vacunada por comuna de residencia en CABA (2021)',
+       subtitle = 'Datos del Ministerio de Salud de la Nación')+
+  theme(panel.background = element_blank(),
+        panel.grid.major = element_line(colour = 'lightgrey', size = 0.2),
+        panel.grid.minor = element_line(colour = 'lightgrey', size = 0.1),
+        strip.background = element_blank(),
+        strip.text = element_text(size = 12),
+        axis.ticks = element_blank(),
+        axis.title = element_text(size = 14),
+        axis.text = element_text(size = 10),
+        legend.key = element_rect(fill = "white"),
+        plot.title = element_text(size = 16),
+        plot.subtitle = element_text(size = 12),
+        legend.title = element_text(size = 12),
+        legend.text = element_text(size = 10))
+
+rm(vacunas_covid_caba_3)
+
+```
+
+Encontramos que en las comunas 3 y 8 se vacunó a poco más del 5% de la población mientras que en la comuna 6 se vacunó a más del doble y en la comuna 5 se vacunó casi al triple de este porcentaje. ¿A qué se debe esta diferencia?
+
+Nos preguntamos si una distribución desigual de los vacunatorios entre comunas podría explicar este fenómeno.
+
+### Postas de vacunación por comuna
+
+Para estudiar la distribución de los vacunatorios en la Ciudad de Buenos Aires vamos a utilizar la [información georreferenciada sobre las postas públicas y privadas para la vacunación contra el COVID-19](https://data.buenosaires.gob.ar/dataset/postas-de-vacunacion-covid-19) en la Ciudad de Buenos Aires (postas_vacunacion_covid.geojson), cuya última actualización fue realizada el 27 de Julio de 2021. En este caso sólo nos interesan los vacunatorios públicos.
+
+Como queremos saber a qué comuna pertenece cada vacunatorio, vamos a cruzar los datos con la [información censal de la Ciudad de Buenos Aires desagregada por radios](https://data.buenosaires.gob.ar/dataset/informacion-censal-por-radio) correspondiente al año 2010 (caba_radios_censales.geojson).
+
+> Según fuentes del [INDEC](https://geoservicios.indec.gov.ar/codgeo/index.php?pagina=definiciones#:~:text=Fracci%C3%B3n%20y%20Radio%3A,unidades%20de%20viviendas%20a%20relevar.) los radios censales son unidades censales que forman parte de la estructura de relevamiento censal y están definidas por un espacio territorial con límites geográficos y una determinada cantidad de unidades de viviendas a relevar. El tamaño de los radios en áreas urbanas se determina según la cantidad de viviendas, teniendo un promedio de 300 cada uno.
+
+```{r vacunatorios en la ciudad de buenos aires, fig.width=8, fig.height=7, fig.cap='Postas de vacunación contra el COVID-19 distribuidas en las distintas comunas de la Ciudad de Buenos Aires en Julio de 2021. En blanco se indican las comunas, en negro los vacunatorios.'}
+vacunatorios_covid_caba <- st_read('data/postas_vacunacion_covid.geojson')
+
+vacunatorios_covid_caba <- vacunatorios_covid_caba %>%
+  filter(categoria == 'Público') %>%
+  select("efector", "geometry")
+
+caba_radios_censales_2010 <- st_read('data/caba_radios_censales.geojson')
+
+comunas <- caba_radios_censales_2010 %>%
+  select('COMUNA', 'geometry') %>%
+  group_by(COMUNA) %>%
+  summarise() %>%
+  ungroup() 
+
+ggplot() + 
+  geom_sf(data = comunas, aes(fill = COMUNA))+
+  theme_void()+
+  geom_sf_text(data = comunas, aes(label = COMUNA), fontface = 2, color = 'white')+
+  geom_sf(data = vacunatorios_covid_caba)+
+  labs(title = 'Postas de vacunación contra el COVID-19 en CABA',
+       subtitle = 'Datos del Gobierno de la Ciudad de Buenos Aires')+
+  guides(fill = "none")
+
+```
+
+```{r vacunatorios en la ciudad de buenos aires 2}
+vacunatorios_por_comuna <- st_join(vacunatorios_covid_caba, comunas) %>%
+  st_drop_geometry() %>%
+  select('efector', 'COMUNA') %>%
+  mutate(COMUNA = as.integer(COMUNA)) %>%
+  arrange(COMUNA) %>%
+  knitr::kable(caption = "Postas de vacunación en CABA.",
+               col.names = c("Efector",
+                             "Comuna"))
+
+vacunatorios_por_comuna
+
+rm(vacunatorios_por_comuna)
+
+```
+
+Vemos que la comuna 3 posee 3 vacunatorios y que además cuenta con vacunatorios ubicados en comunas adyacentes que parecen estar cerca. Los vacunatorios que se encuentran dentro de la comuna 3 son el Centro Cultural Julián Centeya, el Hospital Gral. de Agudos J. M. Ramos Mejía y el ubicado en el Parque de la Estación.
+
+La comuna 8 tiene la misma cantidad de vacunatorios que la comuna 3 (en Parque Roca, en el Ministerio de Desarrollo Humano y Hábitat y en el Local Papa Francisco).
+
+Por su parte, la comuna 5 que tiene el mayor porcentaje de vacunación posee sólo un vacunatorio. Sin embargo éste está ubicado en el Club San Lorenzo (Sede Av. La Plata), una sede amplia que ofrece una gran cantidad de turnos por día.
+
+La comuna 6 que le sigue en cuanto al porcentaje de población vacunada es la que tiene un mayor número de postas de vacunación de las cuatro comunas que estamos analizando en esta sección (en el Club Italiano, el Club Ferro Carril Oeste, el Hospital Gral. de Agudos Dr. C. Durand y la Asociación Corredores Turismo Carretera).
+
+El hecho de que tanto la comuna 3 como la comuna 8 tengan más vacunatorios que la comuna 5 sugiere que la diferencia en cuanto al porcentaje de población vacunada no se explica por una diferencia en la cantidad de vacunatorios por comuna.
+
+### Área de las comunas de CABA
+### Distancia al vacunatorio más cercano
+
+Para analizar la facilidad de acceso a las postas de vacunación, revisemos la distancia entre los radios censales de cada comuna y el vacunatorio más cercano.
+
+```{r distancia entre radios censales y el vacunatorio mas cercano, fig.width=8, fig.height=7, fig.cap='Mapa de la Ciudad de Buenos Aires coloreando por la distancia entre cada radio censal y el vacunatorio más cercano. Se indica el número de cada comuna en negro y en blanco los vacunatorios.'}
+radios_censales <- st_point_on_surface(caba_radios_censales_2010)
+
+radios_censales_vacunatorios <- caba_radios_censales_2010 %>%
+  mutate(distancia = st_distance(radios_censales, vacunatorios_covid_caba[st_nearest_feature(radios_censales, vacunatorios_covid_caba), ], by_element = TRUE)) %>%
+  mutate(distancia = as.numeric(distancia))
+
+ggplot() + 
+  geom_sf(data = radios_censales_vacunatorios, aes(fill = distancia), color = NA) +
+  scale_fill_viridis_c() +
+  theme_void()+
+geom_sf(data = vacunatorios_covid_caba, size = 1, color = 'white')+
+  geom_sf(data = comunas, color = 1, fill = NA)+
+  geom_sf_text(data = comunas, aes(label = COMUNA), fontface = 2)+
+  labs(title = 'Distancia entre radios censales y postas de vacunación en CABA',
+       subtitle = 'Datos del Gobierno de la Ciudad de Buenos Aires')+
+  guides(fill = guide_colorbar(title = 'Distancia (m)'))
+
+rm(radios_censales, caba_radios_censales_2010, radios_censales_vacunatorios, vacunatorios_covid_caba, comunas)
+
+```
+
+La comuna 8 parece tener varios focos de radios censales con distancias grandes al vacunatorio más cercano en relación a otras comunas, ubicados especialmente al sur de la comuna. Sin embargo, esto ocurre también en comunas como la 9 y la 12 que tienen un alto porcentaje de población vacunada (casi el doble que el de la comuna 8). ¿Por qué la gran distancia al centro de vacunación más cercano no representa un problema para los habitantes de esas comunas?
+
+### Comuna de aplicación de la vacuna
+
+Podría ocurrir que los habitantes de las comunas 9 y 12 utilicen vacunatorios ubicados fuera de su comuna (e incluso fuera de la Ciudad de Buenos Aires).
+
+Veamos primero la comuna que utilizan los habitantes de cada comuna de CABA para vacunarse.
+
+```{r vacunacion por comuna de residencia y de aplicacion, fig.width=8, fig.height=7, fig.cap='Vacunación con la primera dosis de la vacuna contra el COVID-19 por comuna de aplicación de la vacuna en la Ciudad Autónoma de Buenos Aires durante el año 2021. Los datos se encuentran separados por comuna de residencia de la persona vacunada. Se encuentra coloreada la comuna 4 respecto de la aplicación de la vacuna.'}
+vacunas_covid_caba_3 <- vacunas_covid_caba_2 %>%
+  mutate(comuna_aplicacion = case_when(str_detect(depto_aplicacion, 'COMUNA') ~ str_extract(depto_aplicacion, "[0-9]+"),
+                                       TRUE ~ 'OTROS'),
+         comuna_aplicacion = factor(comuna_aplicacion, levels = c('1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', '13', '14', '15', 'OTROS'))) %>%
+  arrange(comuna_aplicacion) %>%
+  select("fecha", "comuna", "comuna_aplicacion")
+
+vacunas_covid_caba_4 <- vacunas_covid_caba_3 %>%
+  group_by(comuna, comuna_aplicacion) %>% 
+  summarise(vacunas = n()) %>%
+  ungroup()
+
+vacunas_covid_caba_4 <- left_join(vacunas_covid_caba_4,
+                                  pobl_comuna_caba,
+                                  by = 'comuna') %>%
+  mutate(vacunas_hab = vacunas / habitantes * 100)
+
+ggplot(vacunas_covid_caba_4, aes(y = vacunas_hab, x = comuna_aplicacion, fill = comuna_aplicacion == 4))+
+  geom_col()+
+  scale_fill_manual(values = c("#999999", "#56B4E9"))+
+  facet_wrap(~comuna)+
+  scale_y_continuous(breaks = seq(0, 16, by = 4))+
+  coord_cartesian(ylim = c(0, 16))+
+  labs(x = 'Comuna de aplicación de la vacuna',
+       y = 'Población vacunada (%)',
+       title = 'Vacunación por comuna de aplicación y de residencia',
+       subtitle = 'Datos del Ministerio de Salud de la Nación')+
+  theme(panel.background = element_blank(),
+        panel.grid.major = element_line(colour = 'lightgrey', size = 0.2),
+        panel.grid.minor = element_line(colour = 'lightgrey', size = 0.1),
+        strip.background = element_blank(),
+        panel.border = element_rect(fill = NA, color = "black"),
+        strip.text = element_text(size = 12),
+        axis.ticks = element_blank(),
+        axis.title = element_text(size = 14),
+        axis.text = element_text(size = 10),
+        axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1),
+        legend.position = "none",
+        plot.title = element_text(size = 16),
+        plot.subtitle = element_text(size = 12),
+        legend.title = element_text(size = 12),
+        legend.text = element_text(size = 10))
+
+rm(vacunas_covid_caba_3)
+
+```
+
+La mayoría de los habitantes de todas las comunas utilizan como principales centros de vacunación los ubicados en la comuna 4. En esta comuna se encuentran diversas postas de vacunación (CEMAR 2, Club Huracán, Usina del Arte, Club Boca Junior (Social), Hospital Gral. de Agudos Dr. C. Argerich y Unidad de Vacunación Monasterio), algunas de las cuales son particularmente grandes.
+
+En segundo lugar, los habitantes de las comunas utilizan vacunatorios que se encuentran fuera de CABA ('OTROS').
+
+Veamos el mismo gráfico pero esta vez sin los datos correspondientes a la comuna 4 y a los vacunatorios que no se encuentran en la Ciudad de Buenos Aires.
+
+```{r vacunacion por comuna de residencia y de aplicacion 2, fig.width=8, fig.height=7, fig.cap='Vacunación con la primera dosis de la vacuna contra el COVID-19 por comuna de aplicación de la vacuna en la Ciudad Autónoma de Buenos Aires durante el año 2021. Los datos se encuentran separados por comuna de residencia de la persona vacunada. No se muestran los datos correspondientes a la aplicación de la vacuna en la comuna 4 o en centros de vacunación por fuera de CABA.'}
+ggplot(subset(vacunas_covid_caba_4, !comuna_aplicacion %in% c('4', 'OTROS')), aes(y = vacunas_hab, x = comuna_aplicacion))+
+  geom_col(fill = "#999999")+
+  facet_wrap(~comuna)+
+  scale_y_continuous(breaks = seq(0, 0.5, by = 0.05))+
+  coord_cartesian(ylim = c(0, 0.27))+
+  labs(x = 'Comuna de aplicación de la vacuna',
+       y = 'Población vacunada (%)',
+       title = 'Vacunación por comuna de aplicación y de residencia',
+       subtitle = 'Datos del Ministerio de Salud de la Nación')+
+  theme(panel.background = element_blank(),
+        panel.grid.major = element_line(colour = 'lightgrey', size = 0.2),
+        panel.grid.minor = element_line(colour = 'lightgrey', size = 0.1),
+        strip.background = element_blank(),
+        panel.border = element_rect(fill = NA, color = "black"),
+        strip.text = element_text(size = 12),
+        axis.ticks = element_blank(),
+        axis.title = element_text(size = 14),
+        axis.text = element_text(size = 10),
+        axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1),
+        legend.key = element_rect(fill = "white"),
+        plot.title = element_text(size = 16),
+        plot.subtitle = element_text(size = 12),
+        legend.title = element_text(size = 12),
+        legend.text = element_text(size = 10))
+
+rm(vacunas_covid_caba_4)
+
+```
+
+Si sacamos los datos correspondientes a los centros de vacunación que se encuentran en la comuna 4 y los vacunatorios que están fuera de CABA, vemos que los habitantes siguen utilizando vacunatorios de diversas comunas. Es decir, la población de CABA no sólo se vacuna en postas de vacunación de su comuna de residencia sino tal vez en centros de vacunación de comunas cercanas o cercanas a su lugar de trabajo. Es posible que incluso elijan dónde vacunarse en función de los turnos disponibles y no de la ubicación del vacunatorio.
+
+### Aplicación de la vacuna fuera de CABA
+
+Veamos qué comunas utilizan vacunatorios por fuera de la Ciudad de Buenos Aires, pero cerca, es decir, en la Provincia de Buenos Aires.
+
+```{r vacunacion en PBA por comuna de residencia, fig.width=8, fig.height=7, fig.cap='Vacunación con la primera dosis de la vacuna contra el COVID-19 por comuna de residencia en la Ciudad Autónoma de Buenos Aires durante el año 2021. Se muestran sólo los datos correspondientes a la vacunación en centros ubicados en la Provincia de Buenos Aires. Como referencia, se indica con una línea punteada el porcentaje de población vacunada de la comuna 8.'}
+vacunas_covid_caba_3 <- vacunas_covid_caba_2 %>%
+  filter(jurisdiccion_aplicacion == 'Buenos Aires') %>%
+  select("fecha", "comuna")
+
+vacunas_covid_caba_4 <- vacunas_covid_caba_3 %>%
+  group_by(comuna) %>% 
+  summarise(vacunas = n()) %>%
+  ungroup()
+
+vacunas_covid_caba_4 <- left_join(vacunas_covid_caba_4,
+                                  pobl_comuna_caba,
+                                  by = 'comuna') %>%
+  mutate(vacunas_hab = vacunas / habitantes * 100)
+
+otros_comuna_8 <- as.data.frame(subset(vacunas_covid_caba_4, comuna == 8))[,'vacunas_hab']
+
+ggplot(vacunas_covid_caba_4, aes(x = reorder(factor(comuna), vacunas_hab), y = vacunas_hab))+
+  geom_col()+
+  geom_hline(yintercept = otros_comuna_8, linetype = 'dashed')+
+  scale_y_continuous(breaks = seq(0, 2, by = 0.5))+
+  coord_cartesian(ylim = c(0, 2))+
+  labs(x = 'Comuna',
+       y = 'Población vacunada (%)',
+       title = 'Vacunación por comuna de residencia en centros de la PBA',
+       subtitle = 'Datos del Ministerio de Salud de la Nación')+
+  theme(panel.background = element_blank(),
+        panel.grid.major = element_line(colour = 'lightgrey', size = 0.2),
+        panel.grid.minor = element_line(colour = 'lightgrey', size = 0.1),
+        strip.background = element_blank(),
+        strip.text = element_text(size = 12),
+        axis.ticks = element_blank(),
+        axis.title = element_text(size = 14),
+        axis.text = element_text(size = 10),
+        legend.key = element_rect(fill = "white"),
+        plot.title = element_text(size = 16),
+        plot.subtitle = element_text(size = 12),
+        legend.title = element_text(size = 12),
+        legend.text = element_text(size = 10))
+
+rm(vacunas_covid_caba_3, otros_comuna_8)
+
+```
+
+Las comunas 8 y 3, que poseen un bajo porcentaje de población vacunada en general, utilizan poco los vacunatorios de la Provincia de Buenos Aires en relación al resto de las comunas, mientras que la comuna 5, que posee el mayor porcentaje de población vacunada de todas las comunas, posee también el mayor porcentaje de población vacunada en centros de PBA.
+
+Por otro lado, las comunas que tenían radios censales con grandes distancias al centro de vacunación más cercano en CABA, y que además utilizaron poco los centros de vacunación de la Provincia de Buenos Aires (como las comunas 8, 11 y 4), poseen bajos porcentajes de población vacunada. Por el contrario, las comunas 9 y 12, que poseen focos con una gran distancia al centro de vacunación mas cercano pero utilizan postas de vacunación fuera de CABA, poseen altos porcentajes de población vacunada.
+
+Comunas como la 5, la 6 y la 10, que no poseen radios censales con grandes distancias al vacunatorio más cercano, tienen altos porcentajes de población vacunada.
+
+Estos resultados sugieren que el porcentaje de población vacunada está afectado (al menos en parte) por la distancia al centro de vacunación más cercano y el uso de centros de vacunación por fuera de CABA, en particular, en la Provincia de Buenos Aires.
+
+Para terminar, veamos si existe una correlación entre el porcentaje de población vacunada de las comunas y el porcentaje de población vacunada en centros por fuera de la Ciudad de Buenos Aires (en la Provincia de Buenos Aires o fuera de ella, como control).
+
+```{r correlacion - datos}
+vacunas_covid_caba_5 <- vacunas_covid_caba_2 %>%
+  group_by(comuna) %>%
+  summarise(vacunas = n()) %>%
+  ungroup()
+
+vacunas_covid_caba_5 <- left_join(vacunas_covid_caba_5,
+                                  pobl_comuna_caba,
+                                  by = 'comuna') %>%
+  mutate(vacunas_total = vacunas / habitantes * 100) %>%
+  select('comuna', 'vacunas_total')
+
+vacunas_covid_caba_4 <- vacunas_covid_caba_4 %>%
+  select('comuna', 'vacunas_hab') %>%
+  rename(vacunas_pba = vacunas_hab)
+
+vacunas_covid_caba_6 <- vacunas_covid_caba_2 %>%
+  filter(!jurisdiccion_aplicacion %in% c('CABA', 'Buenos Aires')) %>%
+  select("fecha", "comuna")
+
+vacunas_covid_caba_6 <- vacunas_covid_caba_6 %>%
+  group_by(comuna) %>% 
+  summarise(vacunas = n()) %>%
+  ungroup()
+
+vacunas_covid_caba_6 <- left_join(vacunas_covid_caba_6,
+                                  pobl_comuna_caba,
+                                  by = 'comuna') %>%
+  mutate(vacunas_arg = vacunas / habitantes * 100) %>%
+  select('comuna', 'vacunas_arg')
+
+vacunas_covid_caba_5 <- left_join(vacunas_covid_caba_5,
+                                  vacunas_covid_caba_4,
+                                  by = 'comuna')
+
+vacunas_covid_caba_5 <- left_join(vacunas_covid_caba_5,
+                                  vacunas_covid_caba_6,
+                                  by = 'comuna')
+
+rm(vacunas_covid_caba_2, vacunas_covid_caba_4, vacunas_covid_caba_6, pobl_comuna_caba)
+
+```
+
+```{r correlacion - gráficos, fig.height=7, fig.width=7, fig.cap=c('Correlación entre el porcentaje de la población vacunada en la Provincia de Buenos Aires y en total de las comunas de la Ciudad de Buenos Aires. Cada punto representa la comuna de residencia. Se muestra sobre el gráfico la regresión lineal con el error estándar, la ecuación de la regresión lineal, el p-value y el coeficiente de correlación R.', 'Correlación entre el porcentaje de la población vacunada en el resto de la República Argentina y en total de las comunas de la Ciudad de Buenos Aires. Cada punto representa la comuna de residencia. Se muestra sobre el gráfico la regresión lineal con el error estándar, la ecuación de la regresión lineal, el p-value y el coeficiente de correlación R.')}
+ggscatter(vacunas_covid_caba_5, x = "vacunas_total", y = "vacunas_pba", add = "reg.line", conf.int = TRUE, cor.coef = TRUE, cor.method = "pearson")+
+  stat_regline_equation(label.x = 5.8, label.y = 1.8)+
+  scale_y_continuous(breaks = seq(0, 2.5, by = 0.5))+
+  scale_x_continuous(breaks = seq(0, 20, by = 5))+
+  coord_cartesian(ylim = c(0, 2.6), xlim = c(0, 20))+
+  labs(x = 'Población vacunada (%)',
+       y = 'Población vacunada en la\nProvincia de Buenos Aires (%)',
+       title = 'Correlación entre la población vacunada\ny la que utilizó centros de la PBA',
+       subtitle = 'Datos del Ministerio de Salud de la Nación')+
+  theme(panel.background = element_blank(),
+        panel.grid.major = element_line(colour = 'lightgrey', size = 0.2),
+        panel.grid.minor = element_line(colour = 'lightgrey', size = 0.1),
+        strip.background = element_blank(),
+        strip.text = element_text(size = 12),
+        axis.ticks = element_blank(),
+        axis.title = element_text(size = 14),
+        axis.text = element_text(size = 10),
+        legend.key = element_rect(fill = "white"),
+        plot.title = element_text(size = 16),
+        plot.subtitle = element_text(size = 12),
+        legend.title = element_text(size = 12),
+        legend.text = element_text(size = 10))
+
+ggscatter(vacunas_covid_caba_5, x = "vacunas_total", y = "vacunas_arg", add = "reg.line", conf.int = TRUE, cor.coef = TRUE, cor.method = "pearson")+
+  stat_regline_equation(label.x = 5.8, label.y = 0.2)+
+  scale_y_continuous(breaks = seq(0, 0.5, by = 0.05))+
+  scale_x_continuous(breaks = seq(0, 20, by = 5))+
+  coord_cartesian(ylim = c(0, 0.25), xlim = c(0, 20))+
+  labs(x = 'Población vacunada (%)',
+       y = 'Población vacunada en Argentina\n(%, sin  incluir CABA y PBA)',
+       title = 'Correlación entre la población vacunada\ny la que utilizó centros fuera de CABA y PBA',
+       subtitle = 'Datos del Ministerio de Salud de la Nación')+
+  theme(panel.background = element_blank(),
+        panel.grid.major = element_line(colour = 'lightgrey', size = 0.2),
+        panel.grid.minor = element_line(colour = 'lightgrey', size = 0.1),
+        strip.background = element_blank(),
+        strip.text = element_text(size = 12),
+        axis.ticks = element_blank(),
+        axis.title = element_text(size = 14),
+        axis.text = element_text(size = 10),
+        legend.key = element_rect(fill = "white"),
+        plot.title = element_text(size = 16),
+        plot.subtitle = element_text(size = 12),
+        legend.title = element_text(size = 12),
+        legend.text = element_text(size = 10))
+
+rm(vacunas_covid_caba_5)
+
+```
+
+Encontramos una correlación positiva entre el porcentaje de vacunación en general y el porcentaje de vacunación en postas de la Provincia de Buenos Aires.
+
+Para descartar que la correlación se deba a que las variables no son independientes (en cuyo caso un alto porcentaje de población vacunada en general implicaría un alto porcentaje de población vacunada en cualquier lugar de la República Argentina, incluyendo la Provincia de Buenos Aires), utilizamos como control negativo los datos correspondientes a las postas de vacunación que quedan fuera de CABA pero no en la Provincia de Buenos Aires, es decir, las ubicadas en el resto de la Argentina. Con este set de datos no encontramos ningún tipo de correlación.
+
+Estos resultados sugieren que el uso de postas de vacunación de la Provincia de Buenos Aires por los habitantes de CABA sería un factor relevante para determinar el porcentaje de población vacunada de cada comuna, ya que, por ejemplo, podría compensar la dificultad en el acceso a postas de vacunación ubicadas a grandes distancias de radios censales de algunas comunas, o podría resolver un hipotético problema en cuanto a la disponibilidad de turnos para vacunarse. Sería interesante para complementar este análisis tener acceso a la cantidad de turnos otorgados por cada posta de vacunación, de manera tal de establecer si ese fue o no un factor limitante a la hora de elegir un vacunatorio.
