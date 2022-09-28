@@ -332,6 +332,30 @@ La comuna 6 que le sigue en cuanto al porcentaje de población vacunada es la qu
 El hecho de que tanto la comuna 3 como la comuna 8 tengan más vacunatorios que la comuna 5 sugiere que la diferencia en cuanto al porcentaje de población vacunada no se explica por una diferencia en la cantidad de vacunatorios por comuna.
 
 ### Área de las comunas de CABA
+
+A pesar de tener un número de vacunatorios similar al del resto de las comunas, la comuna 8 tiene un área mucho mayor. Esto podría complicar el acceso de su población a los vacunatorios. Para analizar este punto, veamos primero el área de las comunas de CABA.
+
+```{r area por comuna, fig.width=8, fig.height=7, fig.cap='Mapa de la Ciudad de Buenos Aires con sus comunas coloreadas por área. El área se encuentra además indicada en blanco dentro de cada comuna.'}
+comunas$area <- round(as.numeric(set_units(st_area(comunas), km^2)), 1)
+
+ggplot() + 
+  geom_sf(data = comunas, aes(fill = area))+
+  theme_void()+
+  geom_sf_text(data = comunas, aes(label = area), fontface = 2, color = 'white')+
+  labs(title = 'Comunas de CABA coloreadas por área',
+       subtitle = 'Datos del Gobierno de la Ciudad de Buenos Aires')+
+  guides(fill = guide_colorbar(title = 'Área (km2)'))
+
+```
+
+La comuna 8 tiene un área similar a la comuna 4 y ambas tienen un porcentaje de población vacunada bajo en relación al resto de las comunas (5.94% y 7.47% de su población vacunada, respectivamente). Por otro lado, la comuna 8 tiene un área más de 3 veces mayor que las comunas 5 y 6, que poseen el mayor porcentaje de población vacunada (y se encuentran entre las comunas con menor área total).
+
+Vemos que existe una correlación entre el tamaño de las comunas y el porcentaje de población vacunada para este grupo de comunas. Un área grande podría explicar un porcentaje de población vacunada bajo siempre y cuando esto supusiera una dificultad en cuanto al acceso a los centros de vacunación.
+
+Sin embargo, las comunas 3 y 5, en extremos opuestos en cuanto al porcentaje de población vacunada, poseen un área similar. Por lo tanto, las diferencias en cuanto al área de las comunas podría explicar el menor porcentaje de vacunación de la comuna 8 respecto de las comunas 5 y 6, al menos en parte, pero no explicaría el de la comuna 3.
+
+Ahora bien, ¿por qué un área mayor daría lugar a un menor porcentaje de población vacunada? Si cada comuna tuviera una cantidad suficiente de vacunatorios y éstos estuvieran homogéneamente distribuidos a lo largo de su superficie, la población podría fácilmente acceder a ellos. Si, por el contrario, alguna comuna tuviera pocos centros de vacunación respecto de sus dimensiones o éstos estuvieran ubicados en una misma región de la comuna, podrían existir hogares con una distancia tal al centro de vacunación más cercano que signifique una complicación acceder a ellos.
+
 ### Distancia al vacunatorio más cercano
 
 Para analizar la facilidad de acceso a las postas de vacunación, revisemos la distancia entre los radios censales de cada comuna y el vacunatorio más cercano.
