@@ -4,7 +4,7 @@ En este proyecto se analiza el proceso de vacunación contra el COVID-19 en la C
 
 ## Link
 
-Para visitar la página del repositorio, haga clic en [este enlace](https://pauladuna.github.io/covid-vaccination-geolocation/).
+Para visitar la página del repositorio, haga clic en [este enlace](https://pauladuna.github.io/geolocation-covid-vaccination-in-CABA/).
 
 ## Contexto
 
